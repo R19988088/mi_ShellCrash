@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:dartssh2/dartssh2.dart';
 import '../services/router_manager.dart';
 import 'file_editor_screen.dart';
 
@@ -19,7 +18,7 @@ class FileBrowserScreen extends StatefulWidget {
 
 class _FileBrowserScreenState extends State<FileBrowserScreen> {
   late String _currentPath;
-  List<SftpName> _files = [];
+  List<RemoteFileEntry> _files = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -40,13 +39,13 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       final files = await widget.manager.listFiles(_currentPath);
       // 排序：目录在前，文件在后，按名称排序
       files.sort((a, b) {
-        if (a.attr.isDirectory && !b.attr.isDirectory) return -1;
-        if (!a.attr.isDirectory && b.attr.isDirectory) return 1;
-        return a.filename.compareTo(b.filename);
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        return a.name.compareTo(b.name);
       });
 
       setState(() {
-        _files = files.where((f) => !f.filename.startsWith('.')).toList();
+        _files = files.where((f) => !f.name.startsWith('.')).toList();
         _isLoading = false;
       });
     } catch (e) {
@@ -87,10 +86,8 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => FileEditorScreen(
-          manager: widget.manager,
-          filePath: filePath,
-        ),
+        builder: (context) =>
+            FileEditorScreen(manager: widget.manager, filePath: filePath),
       ),
     );
 
@@ -130,23 +127,17 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           ? '$_currentPath$filename'
           : '$_currentPath/$filename';
       await widget.manager.deleteFile(filePath);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('删除成功'),
-            backgroundColor: Colors.green,
-          ),
+          const SnackBar(content: Text('删除成功'), backgroundColor: Colors.green),
         );
         await _loadFiles();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('删除失败: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('删除失败: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -208,7 +199,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   } else {
                     await widget.manager.writeFile(path, '');
                   }
-                  
+
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -280,9 +271,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
           ),
 
           // 文件列表
-          Expanded(
-            child: _buildFileList(),
-          ),
+          Expanded(child: _buildFileList()),
         ],
       ),
     );
@@ -330,10 +319,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
     if (_files.isEmpty) {
       return const Center(
-        child: Text(
-          '目录为空',
-          style: TextStyle(color: Colors.grey),
-        ),
+        child: Text('目录为空', style: TextStyle(color: Colors.grey)),
       );
     }
 
@@ -352,22 +338,20 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
         final fileIndex = _currentPath != '/' ? index - 1 : index;
         final file = _files[fileIndex];
-        final isDirectory = file.attr.isDirectory;
+        final isDirectory = file.isDirectory;
 
         return ListTile(
           leading: Icon(
             isDirectory ? Icons.folder : Icons.insert_drive_file,
             color: isDirectory ? Colors.blue : Colors.grey,
           ),
-          title: Text(file.filename),
-          subtitle: Text(
-            isDirectory ? '目录' : _formatFileSize(file.attr.size ?? 0),
-          ),
+          title: Text(file.name),
+          subtitle: Text(isDirectory ? '目录' : _formatFileSize(file.size)),
           trailing: !isDirectory
               ? PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'delete') {
-                      _deleteFile(file.filename);
+                      _deleteFile(file.name);
                     }
                   },
                   itemBuilder: (context) => [
@@ -386,9 +370,9 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               : null,
           onTap: () {
             if (isDirectory) {
-              _navigateToDirectory(file.filename);
+              _navigateToDirectory(file.name);
             } else {
-              _openFile(file.filename);
+              _openFile(file.name);
             }
           },
         );

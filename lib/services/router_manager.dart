@@ -1,11 +1,21 @@
 import 'package:dartssh2/dartssh2.dart';
-import 'dart:typed_data';
 import 'dart:convert';
 import '../models/router_config.dart';
 
+class RemoteFileEntry {
+  final String name;
+  final bool isDirectory;
+  final int size;
+
+  const RemoteFileEntry({
+    required this.name,
+    required this.isDirectory,
+    required this.size,
+  });
+}
+
 class RouterManager {
   SSHClient? _client;
-  SftpClient? _sftp;
   final SSHConfig config;
 
   RouterManager(this.config);
@@ -25,7 +35,6 @@ class RouterManager {
         username: config.username,
         onPasswordRequest: () => config.password,
       );
-      _sftp = await _client!.sftp();
     } catch (e) {
       disconnect();
       // 提供更详细的错误信息
@@ -33,7 +42,8 @@ class RouterManager {
         throw Exception('连接超时，请检查 IP 地址和端口是否正确');
       } else if (e.toString().contains('Connection refused')) {
         throw Exception('连接被拒绝，请确认 SSH 服务已启动');
-      } else if (e.toString().contains('AuthFail') || e.toString().contains('authentication')) {
+      } else if (e.toString().contains('AuthFail') ||
+          e.toString().contains('authentication')) {
         throw Exception('认证失败，请检查用户名和密码是否正确');
       } else if (e.toString().contains('No route to host')) {
         throw Exception('无法连接到主机，请检查 IP 地址和网络连接');
@@ -42,64 +52,64 @@ class RouterManager {
     }
   }
 
-  // 列出目录内容
-  Future<List<SftpName>> listFiles(String path) async {
-    if (_sftp == null) throw Exception('未连接到路由器');
-    try {
-      return await _sftp!.listdir(path);
-    } catch (e) {
-      throw Exception('无法列出目录: $e');
+  // 使用 BusyBox 兼容的 find/printf 列出目录，避免 SFTP 卡住。
+  Future<List<RemoteFileEntry>> listFiles(String path) async {
+    if (_client == null) throw Exception('未连接到路由器');
+    final quotedPath = _shellQuote(path);
+    final command =
+        "for item in $quotedPath/* $quotedPath/.[!.]* $quotedPath/..?*; do [ -e \"\$item\" ] || continue; if [ -d \"\$item\" ]; then type=D; size=0; else type=F; size=\$(wc -c < \"\$item\" 2>/dev/null || echo 0); fi; printf \"%s\\t%s\\t%s\\n\" \"\$type\" \"\$size\" \"\$item\"; done";
+    final output = await _runCheckedCommand(command);
+    final files = <RemoteFileEntry>[];
+
+    for (final line in output.split('\n')) {
+      final parts = line.split('\t');
+      if (parts.length < 3) continue;
+      final fullPath = parts.sublist(2).join('\t');
+      final name = fullPath.substring(fullPath.lastIndexOf('/') + 1);
+      if (name.isEmpty || name == '.' || name == '..') continue;
+      files.add(
+        RemoteFileEntry(
+          name: name,
+          isDirectory: parts[0] == 'D',
+          size: int.tryParse(parts[1].trim()) ?? 0,
+        ),
+      );
     }
+    return files;
   }
 
   // 读取文件内容（使用 cat 命令，避免 SFTP 超时）
   Future<String> readFile(String remotePath) async {
     if (_client == null) throw Exception('未连接到路由器');
     try {
-      // 使用 cat 命令读取文件内容
-      final result = await executeCommand('cat "$remotePath"');
-      return result;
+      // 使用 SSH 命令读取文件内容
+      return await _runCheckedCommand('cat ${_shellQuote(remotePath)}');
     } catch (e) {
       throw Exception('无法读取文件: $e');
     }
   }
 
-  // 写入文件内容（使用命令，避免 SFTP 超时）
+  // 写入文件内容。Base64 可避免中文、换行和 Shell 特殊字符被破坏。
   Future<void> writeFile(String remotePath, String content) async {
     if (_client == null) throw Exception('未连接到路由器');
     try {
-      // 转义内容中的特殊字符
-      final escapedContent = content
-          .replaceAll('\\', '\\\\')
-          .replaceAll('\$', '\\\$')
-          .replaceAll('"', '\\"')
-          .replaceAll('`', '\\`');
-      
-      // 使用 echo 写入文件（对于小文件）
-      // 如果文件很大，分块写入
-      if (content.length < 50000) {
-        await executeCommand('echo "$escapedContent" > "$remotePath"');
-      } else {
-        // 大文件：先清空，然后追加
-        await executeCommand('> "$remotePath"');
-        final lines = content.split('\n');
-        final buffer = StringBuffer();
-        
-        for (var i = 0; i < lines.length; i++) {
-          buffer.writeln(lines[i]);
-          
-          // 每1000行或最后一批写入一次
-          if ((i + 1) % 1000 == 0 || i == lines.length - 1) {
-            final chunk = buffer.toString()
-                .replaceAll('\\', '\\\\')
-                .replaceAll('\$', '\\\$')
-                .replaceAll('"', '\\"')
-                .replaceAll('`', '\\`');
-            await executeCommand('echo "$chunk" >> "$remotePath"');
-            buffer.clear();
-          }
-        }
+      final encoded = base64Encode(utf8.encode(content));
+      final tempPath =
+          '$remotePath.shellcrash.tmp.${DateTime.now().microsecondsSinceEpoch}';
+      final quotedTempPath = _shellQuote(tempPath);
+      final quotedRemotePath = _shellQuote(remotePath);
+
+      await _runCheckedCommand('rm -f $quotedTempPath');
+      for (var offset = 0; offset < encoded.length; offset += 24000) {
+        final end = offset + 24000 < encoded.length
+            ? offset + 24000
+            : encoded.length;
+        final chunk = encoded.substring(offset, end);
+        await _runCheckedCommand("printf '%s' '$chunk' >> $quotedTempPath");
       }
+
+      await _runCheckedCommand('base64 -d $quotedTempPath > $quotedRemotePath');
+      await _runCheckedCommand('rm -f $quotedTempPath');
     } catch (e) {
       throw Exception('无法写入文件: $e');
     }
@@ -107,22 +117,12 @@ class RouterManager {
 
   // 删除文件
   Future<void> deleteFile(String remotePath) async {
-    if (_sftp == null) throw Exception('未连接到路由器');
-    try {
-      await _sftp!.remove(remotePath);
-    } catch (e) {
-      throw Exception('无法删除文件: $e');
-    }
+    await _runCheckedCommand('rm -f ${_shellQuote(remotePath)}');
   }
 
   // 创建目录
   Future<void> createDirectory(String remotePath) async {
-    if (_sftp == null) throw Exception('未连接到路由器');
-    try {
-      await _sftp!.mkdir(remotePath);
-    } catch (e) {
-      throw Exception('无法创建目录: $e');
-    }
+    await _runCheckedCommand('mkdir -p ${_shellQuote(remotePath)}');
   }
 
   // 执行命令
@@ -130,13 +130,36 @@ class RouterManager {
     if (_client == null) throw Exception('未连接到路由器');
     try {
       final session = await _client!.execute(command);
-      final output = await session.stdout.map((data) => String.fromCharCodes(data)).join();
-      final error = await session.stderr.map((data) => String.fromCharCodes(data)).join();
+      final stdoutFuture = session.stdout.expand((data) => data).toList();
+      final stderrFuture = session.stderr.expand((data) => data).toList();
+      final results = await Future.wait([stdoutFuture, stderrFuture]);
+      await session.done;
+      final output = utf8.decode(results[0], allowMalformed: true);
+      final error = utf8.decode(results[1], allowMalformed: true);
       return output.isNotEmpty ? output : error;
     } catch (e) {
       throw Exception('命令执行失败: $e');
     }
   }
+
+  Future<String> _runCheckedCommand(String command) async {
+    final output = await executeCommand(
+      '$command; printf "\\n__SHELLCRASH_EXIT__:\$?\\n"',
+    );
+    final marker = '\n__SHELLCRASH_EXIT__:';
+    final markerIndex = output.lastIndexOf(marker);
+    if (markerIndex < 0) throw Exception('命令没有返回状态: $output');
+    final exitCode = int.tryParse(
+      output.substring(markerIndex + marker.length).trim(),
+    );
+    if (exitCode != 0) {
+      throw Exception(output.substring(0, markerIndex).trim());
+    }
+    return output.substring(0, markerIndex).trim();
+  }
+
+  String _shellQuote(String value) =>
+      "'${value.replaceAll("'", "'\\\"'\\\"'")}'";
 
   // 重启 Clash
   Future<String> restartClash() async {
@@ -205,9 +228,7 @@ class RouterManager {
 
   // 断开连接
   void disconnect() {
-    _sftp?.close();
     _client?.close();
-    _sftp = null;
     _client = null;
   }
 }

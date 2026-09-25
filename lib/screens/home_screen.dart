@@ -57,10 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$action失败: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('$action失败: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -68,6 +65,99 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _openFileBrowser() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FileBrowserScreen(
+          manager: widget.manager,
+          initialPath: '/data/ShellCrash/yamls',
+        ),
+      ),
+    );
+  }
+
+  void _openDiagnostics() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DiagnosticsScreen(manager: widget.manager),
+      ),
+    );
+  }
+
+  void _openReadTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TestReadScreen(manager: widget.manager),
+      ),
+    );
+  }
+
+  void _disconnect() {
+    widget.manager.disconnect();
+    Navigator.of(context).pop();
+  }
+
+  PopupMenuButton<String> _buildToolsMenu() {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert),
+      tooltip: '更多工具',
+      onSelected: (value) {
+        switch (value) {
+          case 'files':
+            _openFileBrowser();
+            break;
+          case 'command':
+            _showCommandDialog();
+            break;
+          case 'diagnostics':
+            _openDiagnostics();
+            break;
+          case 'test':
+            _openReadTest();
+            break;
+          case 'disconnect':
+            _disconnect();
+            break;
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 'files',
+          child: ListTile(leading: Icon(Icons.folder), title: Text('浏览配置文件')),
+        ),
+        PopupMenuItem(
+          value: 'command',
+          child: ListTile(
+            leading: Icon(Icons.terminal),
+            title: Text('执行自定义命令'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'diagnostics',
+          child: ListTile(
+            leading: Icon(Icons.medical_services),
+            title: Text('系统诊断'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'test',
+          child: ListTile(leading: Icon(Icons.bug_report), title: Text('读取测试')),
+        ),
+        PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'disconnect',
+          child: ListTile(
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text('断开连接', style: TextStyle(color: Colors.red)),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -81,6 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: _isLoading ? null : _loadClashStatus,
             tooltip: '刷新状态',
           ),
+          _buildToolsMenu(),
         ],
       ),
       body: ListView(
@@ -88,8 +179,9 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Clash 控制面板
           Card(
+            margin: const EdgeInsets.symmetric(horizontal: 0),
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.fromLTRB(8, 16, 8, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -114,11 +206,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           onPressed: _isLoading
                               ? null
                               : () => _executeClashCommand(
-                                    '启动',
-                                    widget.manager.startClash,
-                                  ),
+                                  '启动',
+                                  widget.manager.startClash,
+                                ),
                           icon: const Icon(Icons.play_arrow),
-                          label: const Text('启动'),
+                          label: const Text('启动', maxLines: 1, softWrap: false),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
                             foregroundColor: Colors.white,
@@ -131,11 +223,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           onPressed: _isLoading
                               ? null
                               : () => _executeClashCommand(
-                                    '停止',
-                                    widget.manager.stopClash,
-                                  ),
+                                  '停止',
+                                  widget.manager.stopClash,
+                                ),
                           icon: const Icon(Icons.stop),
-                          label: const Text('停止'),
+                          label: const Text('停止', maxLines: 1, softWrap: false),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.red,
                             foregroundColor: Colors.white,
@@ -148,11 +240,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           onPressed: _isLoading
                               ? null
                               : () => _executeClashCommand(
-                                    '重启',
-                                    widget.manager.restartClash,
-                                  ),
+                                  '重启',
+                                  widget.manager.restartClash,
+                                ),
                           icon: const Icon(Icons.restart_alt),
-                          label: const Text('重启'),
+                          label: const Text('重启', maxLines: 1, softWrap: false),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.orange,
                             foregroundColor: Colors.white,
@@ -224,82 +316,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => ClashRulesScreen(
-                          manager: widget.manager,
-                        ),
+                        builder: (context) =>
+                            ClashRulesScreen(manager: widget.manager),
                       ),
                     );
-                  },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.folder, color: Colors.blue),
-                  title: const Text('浏览配置文件'),
-                  subtitle: const Text('高级：直接编辑配置文件'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => FileBrowserScreen(
-                          manager: widget.manager,
-                          initialPath: '/etc/clash',
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.terminal, color: Colors.green),
-                  title: const Text('执行自定义命令'),
-                  subtitle: const Text('在路由器上执行命令'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _showCommandDialog(),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.medical_services, color: Colors.orange),
-                  title: const Text('系统诊断'),
-                  subtitle: const Text('检查权限和配置文件位置'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => DiagnosticsScreen(
-                          manager: widget.manager,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.bug_report, color: Colors.purple),
-                  title: const Text('读取测试'),
-                  subtitle: const Text('测试 ShellCrash 配置读取'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TestReadScreen(
-                          manager: widget.manager,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.logout, color: Colors.red),
-                  title: const Text('断开连接'),
-                  subtitle: const Text('返回登录界面'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    widget.manager.disconnect();
-                    Navigator.of(context).pop();
                   },
                 ),
               ],
@@ -312,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showCommandDialog() {
     final controller = TextEditingController();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -339,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               final command = controller.text.trim();
               Navigator.pop(context);
-              
+
               if (command.isEmpty) return;
 
               try {
@@ -373,10 +393,7 @@ class _HomeScreenState extends State<HomeScreen> {
         content: SingleChildScrollView(
           child: SelectableText(
             content,
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 12,
-            ),
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
           ),
         ),
         actions: [

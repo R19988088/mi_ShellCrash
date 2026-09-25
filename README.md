@@ -18,9 +18,9 @@
 
 ## 📦 下载安装
 
-**最新版本：v0.8 (v3.4)**
+**最新版本：v0.83**
 
-📥 [下载 ShellCrash管理-v3.4-完美版.apk](https://github.com/R19988088/mi_ShellCrash/releases)
+📥 [下载 ShellCrash管理-v0.83-命令模式.apk](https://github.com/R19988088/mi_ShellCrash/releases)
 
 - **包名：** `com.ddd.mi_shellcrash`
 - **应用名：** ShellCrash管理
@@ -167,15 +167,22 @@ rules:
 在测试中发现 SFTP 读取某些路由器上的文件会超时，因此改用 SSH 命令：
 
 - **读取文件：** `cat /path/to/file`
-- **写入文件：** `echo "content" > /path/to/file`
+- **写入文件：** Base64 分片传输后解码写入
+- **目录列表：** SSH 命令遍历
+- **删除/建目录：** `rm` / `mkdir`
 
 这种方式更快、更稳定，兼容性更好。
 
 ## 📋 版本历史
 
-### v0.8 (v3.4) - 2024-09-25
+### v0.83 - 2026-09-25
 
 **新功能：**
+- ✅ 高级工具收进右上角三个点菜单
+- ✅ 文件浏览器完全改用 SSH 命令模式
+- ✅ 默认浏览 ShellCrash 的 `/data/ShellCrash/yamls` 目录
+- ✅ 服务控制按钮宽度优化
+- ✅ 目录列表、删除和新建目录不再依赖 SFTP
 - ✅ 规则切换不改变位置（原地更新）
 - ✅ IP 输入框使用数字键盘
 
